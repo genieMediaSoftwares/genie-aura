@@ -1,0 +1,6 @@
+{
+  "name": "GenieAura",
+  "description": "AI Agency Operating System for Genie Media & Studio in Visakhapatnam, India. Multi-tenant command center managing clients, campaigns, content production, approvals, team workflows, AI department agents, knowledge bases, and reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

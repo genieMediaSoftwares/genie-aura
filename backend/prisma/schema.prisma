@@ -1,0 +1,375 @@
+// Prisma Schema for GenieAura - Multi-Tenant AI Agency Operating System
+// Genie Media & Studio, Yendada, Visakhapatnam, India
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RoleType {
+  SUPER_ADMIN
+  AGENCY_ADMIN
+  AGENCY_MANAGER
+  TEAM_MEMBER
+  CLIENT_VIEWER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  WAITING_FOR_APPROVAL
+  BLOCKED
+  DONE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum ApprovalType {
+  CONTENT_CALENDAR
+  CAPTION
+  REEL_SCRIPT
+  CLIENT_RESPONSE_DRAFT
+  STRATEGY_PLAN
+  AD_BUDGET_RECOMMENDATION
+  PUBLIC_SOCIAL_REPLY
+  CAMPAIGN_CHANGE
+}
+
+enum AgentStatus {
+  ACTIVE
+  WAITING
+  NEEDS_APPROVAL
+  BLOCKED
+}
+
+enum DocumentType {
+  PDF
+  DOCX
+  TXT
+  MARKDOWN
+  CSV
+}
+
+model Organization {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  location    String       @default("Yendada, Visakhapatnam, India")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  users       Membership[]
+  clients     Client[]
+  campaigns   Campaign[]
+  tasks       Task[]
+  approvals   ApprovalRequest[]
+  agents      Agent[]
+  conversations AgentConversation[]
+  knowledgeBases KnowledgeBase[]
+  notifications Notification[]
+  activityLogs  ActivityLog[]
+  reports       Report[]
+}
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  memberships  Membership[]
+  tasks        Task[]       @relation("AssignedTasks")
+  taskComments TaskComment[]
+  approvalsReviewed ApprovalRequest[] @relation("ReviewedApprovals")
+  activityLogs ActivityLog[]
+}
+
+model Membership {
+  id             String       @id @default(uuid())
+  organizationId String
+  userId         String
+  role           RoleType     @default(AGENCY_ADMIN)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+}
+
+model Client {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  industry       String
+  location       String       @default("Visakhapatnam")
+  contactPerson  String
+  contactEmail   String
+  contactPhone   String?
+  status         String       @default("ACTIVE") // ACTIVE, ONBOARDING, REVIEW, ARCHIVED
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  brandProfile   ClientBrandProfile?
+  campaigns      Campaign[]
+  tasks          Task[]
+  approvals      ApprovalRequest[]
+  documents      KnowledgeDocument[]
+  reports        Report[]
+}
+
+model ClientBrandProfile {
+  id              String   @id @default(uuid())
+  clientId        String   @unique
+  brandVoice      String   // Tone, vibe, personality
+  targetAudience  String   // Demographics, psychographics, local Vizag nuances
+  coreServices    String   // Key offerings
+  competitors     String   // Key competitors
+  socialChannels  String   // Instagram, LinkedIn, YouTube, Facebook, WhatsApp
+  contentPillars  String   // Major themes
+  brandGuidelines String?  // Colors, fonts, taglines
+  updatedAt       DateTime @updatedAt
+
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id             String       @id @default(uuid())
+  organizationId String
+  clientId       String
+  title          String
+  description    String
+  budget         Float        @default(0)
+  startDate      DateTime
+  endDate        DateTime?
+  status         String       @default("ACTIVE") // PLANNING, ACTIVE, COMPLETED, PAUSED
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  tasks          Task[]
+  reports        Report[]
+}
+
+model Agent {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String       // Operations AI, Content AI, Strategy AI, etc.
+  code           String       // operations_agent, content_agent, etc.
+  department     String       // Operations, Creative, Strategy, Social, Analytics
+  systemPrompt   String
+  status         AgentStatus  @default(ACTIVE)
+  currentTask    String?
+  workloadCount  Int          @default(0)
+  lastActivity   DateTime     @default(now())
+  modelConfig    String?      // JSON string for temperature, model alias, etc.
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedTasks  Task[]       @relation("AgentTasks")
+  handoffsFrom   TaskHandoff[] @relation("FromAgent")
+  handoffsTo     TaskHandoff[] @relation("ToAgent")
+  approvals      ApprovalRequest[]
+}
+
+model Task {
+  id               String       @id @default(uuid())
+  organizationId   String
+  clientId         String?
+  campaignId       String?
+  assignedUserId   String?
+  assignedAgentId  String?
+  title            String
+  description      String
+  status           TaskStatus   @default(TODO)
+  priority         Priority     @default(MEDIUM)
+  dueDate          DateTime?
+  requiresApproval Boolean      @default(false)
+  approvalReason   String?
+  tags             String       @default("[]") // JSON string array of tags
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client           Client?      @relation(fields: [clientId], references: [id])
+  campaign         Campaign?    @relation(fields: [campaignId], references: [id])
+  assignedUser     User?        @relation("AssignedTasks", fields: [assignedUserId], references: [id])
+  assignedAgent    Agent?       @relation("AgentTasks", fields: [assignedAgentId], references: [id])
+  comments         TaskComment[]
+  handoffs         TaskHandoff[]
+  approvalRequests ApprovalRequest[]
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String?
+  authorName String
+  content   String
+  createdAt DateTime @default(now())
+
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id])
+}
+
+model TaskHandoff {
+  id          String   @id @default(uuid())
+  taskId      String
+  fromAgentId String
+  toAgentId   String
+  message     String
+  status      String   @default("COMPLETED")
+  createdAt   DateTime @default(now())
+
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromAgent   Agent    @relation("FromAgent", fields: [fromAgentId], references: [id])
+  toAgent     Agent    @relation("ToAgent", fields: [toAgentId], references: [id])
+}
+
+model ApprovalRequest {
+  id              String         @id @default(uuid())
+  organizationId  String
+  clientId        String
+  taskId          String?
+  creatorAgentId  String?
+  type            ApprovalType
+  title           String
+  contentPreview  String         // Text preview, caption, script, or budget table
+  contextData     String         // Structured JSON string of inputs, sources, parameters
+  status          ApprovalStatus @default(PENDING)
+  decisionReason  String?
+  reviewedByUserId String?
+  reviewedAt      DateTime?
+  auditHistory    String         @default("[]") // JSON array of logs
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client          Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  task            Task?          @relation(fields: [taskId], references: [id])
+  creatorAgent    Agent?         @relation(fields: [creatorAgentId], references: [id])
+  reviewedByUser  User?          @relation("ReviewedApprovals", fields: [reviewedByUserId], references: [id])
+}
+
+model AgentConversation {
+  id             String       @id @default(uuid())
+  organizationId String
+  agentCode      String       // operations_agent, etc.
+  clientId       String?      // Optional contextual client
+  title          String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messages       AgentMessage[]
+}
+
+model AgentMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  role           String   // user, assistant, system
+  content        String
+  structuredData String?  // JSON string containing tasks, handoffs, notification, sources
+  createdAt      DateTime @default(now())
+
+  conversation   AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeBase {
+  id             String       @id @default(uuid())
+  organizationId String
+  name           String
+  description    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents      KnowledgeDocument[]
+}
+
+model KnowledgeDocument {
+  id              String       @id @default(uuid())
+  knowledgeBaseId String?
+  clientId        String?
+  title           String
+  type            DocumentType
+  category        String       // Brand Voice, Menu, Price List, Case Study, Guidelines
+  fileUrl         String?
+  extractedText   String
+  tags            String       @default("[]") // JSON string array
+  status          String       @default("INDEXED") // PENDING, PROCESSING, INDEXED, ERROR
+  uploadedBy      String       @default("Agency Admin")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  client          Client?        @relation(fields: [clientId], references: [id])
+}
+
+model Notification {
+  id             String   @id @default(uuid())
+  organizationId String
+  title          String
+  message        String
+  severity       String   @default("info") // info, warning, urgent
+  isRead         Boolean  @default(false)
+  link           String?
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model ActivityLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorId        String?
+  actorName      String
+  action         String   // CREATED_CLIENT, APPROVED_CONTENT, REJECTED_PLAN, CREATED_TASK, AI_HANDOFF
+  entityType     String   // Client, Task, ApprovalRequest, Agent, Campaign, Report
+  entityId       String
+  summary        String
+  details        String?  // JSON string before/after
+  timestamp      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor          User?        @relation(fields: [actorId], references: [id])
+}
+
+model Report {
+  id             String   @id @default(uuid())
+  organizationId String
+  clientId       String
+  campaignId     String?
+  title          String
+  type           String   // WEEKLY, MONTHLY
+  period         String   // e.g., "Aug 25 - Aug 31, 2026"
+  kpiMetrics     String   // JSON string: { roas: 4.2, reach: 45000, engagementRate: "5.4%", ... }
+  executiveSummary String
+  recommendations  String
+  createdAt      DateTime @default(now())
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client         Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaign       Campaign?    @relation(fields: [campaignId], references: [id])
+}
